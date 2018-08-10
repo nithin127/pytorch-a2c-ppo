@@ -11,6 +11,7 @@ import sys
 
 try:
     import gym_duckietown
+    import gym_minigrid
 except ImportError:
     pass
 
