@@ -17,6 +17,8 @@ class ACModel(nn.Module, torch_rl.RecurrentACModel):
     def __init__(self, obs_space, action_space, use_instr=True, use_memory=True):
         super().__init__()
 
+        num_action_space = action_space.shape[0] if action_space.__class__.__name__ == "Box" else action_space.n
+
         # Decide which components are enabled
         self.use_instr = use_instr
         self.use_memory = use_memory
@@ -53,7 +55,7 @@ class ACModel(nn.Module, torch_rl.RecurrentACModel):
         self.actor = nn.Sequential(
             nn.Linear(self.embedding_size, 64),
             nn.Tanh(),
-            nn.Linear(64, action_space.n)
+            nn.Linear(64, num_action_space)
         )
 
         # Define critic's model
