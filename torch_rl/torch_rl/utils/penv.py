@@ -37,6 +37,8 @@ class ParallelEnv(gym.Env):
     def reset(self):
         for local in self.locals:
             local.send(("reset", None))
+        import ipdb
+        ipdb.set_trace()
         results = [self.envs[0].reset()] + [local.recv() for local in self.locals]
         return results
 

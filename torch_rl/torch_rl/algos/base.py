@@ -2,14 +2,13 @@ from abc import ABC, abstractmethod
 import torch
 import numpy
 
-from torch_rl.format import default_preprocess_obss
-from torch_rl.utils import DictList, ParallelEnv
+from torch_rl.utils import ParallelEnv
 
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs, acmodel, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward):
+                 value_loss_coef, max_grad_norm, recurrence, reshape_reward):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -36,9 +35,6 @@ class BaseAlgo(ABC):
             gradient will be clipped to be at most this value
         recurrence : int
             the number of steps the gradient is propagated back in time
-        preprocess_obss : function
-            a function that takes observations returned by the environment
-            and converts them into the format that the model can handle
         reshape_reward : function
             a function that shapes the reward, takes an
             (observation, action, reward, done) tuple as an input
@@ -57,7 +53,6 @@ class BaseAlgo(ABC):
         self.value_loss_coef = value_loss_coef
         self.max_grad_norm = max_grad_norm
         self.recurrence = recurrence
-        self.preprocess_obss = preprocess_obss or default_preprocess_obss
         self.reshape_reward = reshape_reward
 
         # Store helpers values
@@ -125,12 +120,11 @@ class BaseAlgo(ABC):
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
 
-            preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
             with torch.no_grad():
                 if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                    dist, value, memory = self.acmodel(self.obs, self.memory * self.mask.unsqueeze(1))
                 else:
-                    dist, value = self.acmodel(preprocessed_obs)
+                    dist, value = self.acmodel(self.obs)
             action = dist.sample()
 
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
@@ -174,12 +168,11 @@ class BaseAlgo(ABC):
 
         # Add advantage and return to experiences
 
-        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
         with torch.no_grad():
             if self.acmodel.recurrent:
-                _, next_value, _ = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                _, next_value, _ = self.acmodel(self.obs, self.memory * self.mask.unsqueeze(1))
             else:
-                _, next_value = self.acmodel(preprocessed_obs)
+                _, next_value = self.acmodel(self.obs)
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask = self.masks[i+1] if i < self.num_frames_per_proc - 1 else self.mask
@@ -202,10 +195,6 @@ class BaseAlgo(ABC):
         exps.advantage = self.advantages.view(-1, *self.advantages.shape[2:])
         exps.returnn = exps.value + exps.advantage
         exps.log_prob = self.log_probs.view(-1, *self.log_probs.shape[2:])
-
-        # Preprocess experiences
-
-        exps.obs = self.preprocess_obss(exps.obs, device=self.device)
 
         # Log some values
 

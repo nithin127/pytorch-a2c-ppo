@@ -10,7 +10,7 @@ import os
 import sys
 
 try:
-    import gym_minigrid
+    import gym_duckietown
 except ImportError:
     pass
 
@@ -64,8 +64,6 @@ parser.add_argument("--epochs", type=int, default=4,
                     help="number of epochs for PPO (default: 4)")
 parser.add_argument("--batch-size", type=int, default=256,
                     help="batch size for PPO (default: 256)")
-parser.add_argument("--no-instr", action="store_true", default=False,
-                    help="don't use instructions in the model")
 parser.add_argument("--no-mem", action="store_true", default=False,
                     help="don't use memory in the model")
 args = parser.parse_args()
@@ -102,9 +100,6 @@ for i in range(args.procs):
     env.seed(args.seed + 10000*i)
     envs.append(env)
 
-# Define obss preprocessor
-
-preprocess_obss = utils.ObssPreprocessor(save_dir, envs[0].observation_space)
 
 # Define actor-critic model
 
@@ -113,7 +108,7 @@ if utils.model_exists(save_dir):
     status = utils.load_status(save_dir)
     logger.info("Model successfully loaded\n")
 else:
-    acmodel = ACModel(preprocess_obss.obs_space, envs[0].action_space, not args.no_instr, not args.no_mem)
+    acmodel = ACModel(envs[0].observation_space, envs[0].action_space, not args.no_mem)
     status = {"num_frames": 0, "update": 0}
     logger.info("Model successfully created\n")
 logger.info("{}\n".format(acmodel))
@@ -127,11 +122,11 @@ logger.info("CUDA available: {}\n".format(torch.cuda.is_available()))
 if args.algo == "a2c":
     algo = torch_rl.A2CAlgo(envs, acmodel, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                             args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                            args.optim_alpha, args.optim_eps, preprocess_obss)
+                            args.optim_alpha, args.optim_eps)
 elif args.algo == "ppo":
     algo = torch_rl.PPOAlgo(envs, acmodel, args.frames_per_proc, args.discount, args.lr, args.gae_lambda,
                             args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
-                            args.optim_eps, args.clip_eps, args.epochs, args.batch_size, preprocess_obss)
+                            args.optim_eps, args.clip_eps, args.epochs, args.batch_size)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -187,11 +182,10 @@ while num_frames < args.frames:
         status = {"num_frames": num_frames, "update": update}
         utils.save_status(status, save_dir)
 
-    # Save vocabulary and model
+    # Save model
 
     if args.save_interval > 0 and update % args.save_interval == 0:
-        preprocess_obss.vocab.save()
-
+        
         if torch.cuda.is_available():
             acmodel.cpu()
         utils.save_model(acmodel, save_dir)
