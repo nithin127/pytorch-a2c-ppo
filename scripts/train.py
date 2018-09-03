@@ -6,7 +6,6 @@ import time
 import datetime
 import torch
 import torch_rl
-import os
 import sys
 
 try:
@@ -79,7 +78,7 @@ save_dir = utils.get_save_dir(model_name)
 # Define logger, CSV writer and Tensorboard writer
 
 logger = utils.get_logger(save_dir)
-csv_writer = utils.get_csv_writer(save_dir)
+csv_file, csv_writer = utils.get_csv_writer(save_dir)
 if args.tb:
     from tensorboardX import SummaryWriter
     tb_writer = SummaryWriter(save_dir)
@@ -102,15 +101,20 @@ for i in range(args.procs):
     envs.append(env)
 
 
+# Load training status
+
+try:
+    status = utils.load_status(save_dir)
+except OSError:
+    status = {"num_frames": 0, "update": 0}
+
 # Define actor-critic model
 
-if utils.model_exists(save_dir):
+try:
     acmodel = utils.load_model(save_dir)
-    status = utils.load_status(save_dir)
     logger.info("Model successfully loaded\n")
-else:
+except OSError:
     acmodel = ACModel(envs[0].observation_space, envs[0].action_space, not args.no_mem)
-    status = {"num_frames": 0, "update": 0}
     logger.info("Model successfully created\n")
 logger.info("{}\n".format(acmodel))
 
@@ -166,15 +170,16 @@ while num_frames < args.frames:
         data += [logs["entropy"], logs["value"], logs["policy_loss"], logs["value_loss"], logs["grad_norm"]]
 
         logger.info(
-            "U {} | F {:06} | FPS {:04} | D {} | rR:x̄σmM {:.2f} {:.2f} {:.2f} {:.2f} | F:x̄σmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
+            "U {} | F {:06} | FPS {:04.0f} | D {} | rR:x̄σmM {:.2f} {:.2f} {:.2f} {:.2f} | F:x̄σmM {:.1f} {:.1f} {} {} | H {:.3f} | V {:.3f} | pL {:.3f} | vL {:.3f} | ∇ {:.3f}"
             .format(*data))
 
         header += ["return_" + key for key in return_per_episode.keys()]
         data += return_per_episode.values()
 
-        if not(status["num_frames"]):
+        if status["num_frames"] == 0:
             csv_writer.writerow(header)
         csv_writer.writerow(data)
+        csv_file.flush()
 
         if args.tb:
             for field, value in zip(header, data):

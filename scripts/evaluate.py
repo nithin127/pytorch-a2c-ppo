@@ -3,7 +3,8 @@
 import argparse
 import gym
 import time
-import datetime
+import torch
+from torch_rl.utils.penv import ParallelEnv
 
 try:
     import gym_minigrid
@@ -23,6 +24,8 @@ parser.add_argument("--episodes", type=int, default=1000,
                     help="number of episodes of evaluation (default: 1000)")
 parser.add_argument("--seed", type=int, default=0,
                     help="random seed (default: 0)")
+parser.add_argument("--procs", type=int, default=16,
+                    help="number of processes (default: 16)")
 parser.add_argument("--argmax", action="store_true", default=False,
                     help="action with highest probability is selected")
 args = parser.parse_args()
@@ -33,13 +36,18 @@ utils.seed(args.seed)
 
 # Generate environment
 
-env = gym.make(args.env)
-env.seed(args.seed)
+envs = []
+for i in range(args.procs):
+    env = gym.make(args.env)
+    env.seed(args.seed + 10000*i)
+    envs.append(env)
+env = ParallelEnv(envs)
 
 # Define agent
 
 save_dir = utils.get_save_dir(args.model)
-agent = utils.Agent(save_dir, env.observation_space, args.argmax)
+agent = utils.Agent(save_dir, env.observation_space, args.argmax, args.procs)
+print("CUDA available: {}\n".format(torch.cuda.is_available()))
 
 # Initialize logs
 
@@ -49,23 +57,29 @@ logs = {"num_frames_per_episode": [], "return_per_episode": []}
 
 start_time = time.time()
 
-for _ in range(args.episodes):
-    obs = env.reset()
-    done = False
+obss = env.reset()
 
-    num_frames = 0
-    returnn = 0
+log_done_counter = 0
+log_episode_return = torch.zeros(args.procs, device=agent.device)
+log_episode_num_frames = torch.zeros(args.procs, device=agent.device)
 
-    while not(done):
-        action = agent.get_action(obs)
-        obs, reward, done, _ = env.step(action)
-        agent.analyze_feedback(reward, done)
+while log_done_counter < args.episodes:
+    actions = agent.get_actions(obss)
+    obss, rewards, dones, _ = env.step(actions)
+    agent.analyze_feedbacks(rewards, dones)
 
-        num_frames += 1
-        returnn += reward
+    log_episode_return += torch.tensor(rewards, device=agent.device, dtype=torch.float)
+    log_episode_num_frames += torch.ones(args.procs, device=agent.device)
 
-    logs["num_frames_per_episode"].append(num_frames)
-    logs["return_per_episode"].append(returnn)
+    for i, done in enumerate(dones):
+        if done:
+            log_done_counter += 1
+            logs["return_per_episode"].append(log_episode_return[i].item())
+            logs["num_frames_per_episode"].append(log_episode_num_frames[i].item())
+
+    mask = 1 - torch.tensor(dones, device=agent.device, dtype=torch.float)
+    log_episode_return *= mask
+    log_episode_num_frames *= mask
 
 end_time = time.time()
 

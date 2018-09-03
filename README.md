@@ -8,21 +8,24 @@ A recurrent, multi-process and readable PyTorch implementation of the deep reinf
 inspired by 3 repositories:
 
 1. [pytorch-a2c-ppo-acktr](https://github.com/ikostrikov/pytorch-a2c-ppo-acktr)
-2. [Pytorch RL](https://github.com/Khrylx/PyTorch-RL)
+2. [PyTorch RL](https://github.com/Khrylx/PyTorch-RL)
 3. [OpenAI Baselines](https://github.com/openai/baselines)
 
 ## Features
 
-- Tensor or dict of tensors observation space
-- Discrete & continuous action space
-- Entropy regularization
+- General kinds of observation spaces: tensors and dict of tensors
+- General kinds of action spaces: discrete and continuous
+- Recurrent policy with `--recurrence` argument
+- Observation preprocessing
 - Reward shaping
-- Recurrent policy by specifying the recurrence
+- Entropy regularization
 - Fast:
     - Multiprocessing for collection trajectories in multiple environments simultaneously
     - GPU (CUDA) for tensor operations
-- Tensorboard
-- Pytorch 0.4.0
+- Training logs:
+    - CSV
+    - Tensorboard
+- PyTorch 0.4.0
 
 ## Installation
 
@@ -42,7 +45,7 @@ The module consists of:
 
 ### How to use?
 
-I will detail here the points that can't be understood immediately by looking at the definition files of the classes, or by looking at the arguments of `scripts/train.py` with `scripts/train.py --help` command.
+Here are detailed the points that can't be understood immediately by looking at the definition files of the classes, or by looking at the arguments of `scripts/train.py` with `scripts/train.py --help` command.
 
 `torch_rl.A2CAlgo` and `torch_rl.PPOAlgo` have 2 methods:
 - `__init__` that may take, among the other parameters :
@@ -89,18 +92,24 @@ An example of use of `torch_rl.DictList` and an example of a `preprocess_obss` f
 export OMP_NUM_THREADS=1
 ```
 
-## `scripts`
-
-Along with the `torch_rl` package, I provide 3 general reinforcement learning scripts:
-- `train.py` for training an actor-critic model with A2C or PPO.
-- `enjoy.py` for visualizing your trained model acting.
-- `evaluate.py` for evaluating the performances of your trained model over X episodes.
-
 For your own purposes, you will probabily need to change:
 - the model in `model.py`,
 - the `ObssPreprocessor.__call__` method in `utils.format`.
 
-They were designed especially for the [MiniGrid environments](https://github.com/maximecb/gym-minigrid). These environments give an observation containing an image and a textual instruction to the agent and a reward of 1 if it successfully executes the instruction, 0 otherwise. They are used in what follows for illustrating purposes.
+## `model.py`
+
+Along with the `torch_rl` package is provided a model that:
+- has a memory. This can be disabled by setting `use_memory` to `False` in the constructor.
+- understands instructions. This can be disabled by setting `use_instr` to `False` in the constructor.
+
+## `scripts`
+
+Along with the `torch_rl` package are provided 3 general reinforcement learning scripts:
+- `train.py` for training an actor-critic model with A2C or PPO.
+- `enjoy.py` for visualizing your trained model acting.
+- `evaluate.py` for evaluating the performances of your trained model over X episodes.
+
+These scripts were designed especially for the [MiniGrid environments](https://github.com/maximecb/gym-minigrid). These environments give an observation containing an image and a textual instruction to the agent and a reward of 1 if it successfully executes the instruction, 0 otherwise. They are used in what follows for illustrating purposes.
 
 These scripts assume that you have already installed the `gym` package (with `pip3 install gym` for example). By default, models and logs are stored in the `storage` folder. You can define a different folder in the environment variable `TORCH_RL_STORAGE`.
 
@@ -115,11 +124,13 @@ These scripts assume that you have already installed the `gym` package (with `pi
 and a bunch of optional arguments are available among which:
 - `--model MODEL`: name of the model, used for loading and saving it. If not specified, it is the `_`-concatenation of the environment name and algorithm name.
 - `--frames-per-proc FRAMES_PER_PROC`: number of frames per process before updating parameters.
+- `--no-instr`: disable the understanding of instructions of the original model in `model.py`. If your model is trained on an environment where there is no need to understand instructions, it is advised to disable it for faster training.
+- `--no-mem`: disable the memory of the original model in `model.py`. If your model is trained on an environment where there is no need to remember something, it is advised to disable it for faster training.
 - ... (see more using `--help`)
 
 Here is an example of command:
 ```
-python3 -m scripts.train --algo ppo --env MiniGrid-DoorKey-5x5-v0 --model DoorKey --save-interval 10 --frames 1000000
+python3 -m scripts.train --algo ppo --env MiniGrid-DoorKey-5x5-v0 --no-instr --no-mem --model DoorKey --save-interval 10
 ```
 
 This will print some logs in your terminal:
